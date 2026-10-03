@@ -8,5 +8,6 @@ __pycache__/
 *.egg-info/
 agents/output/
 *.bak
+streak.json
 .DS_Store
 assets/*.pb
