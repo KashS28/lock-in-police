@@ -2,6 +2,7 @@
 """Lock-In Police — macOS menubar app."""
 from __future__ import annotations
 
+import json
 import os
 import queue
 import random
@@ -24,8 +25,9 @@ POPUP_SCRIPT = os.path.join(APP_DIR, "popup.py")
 ASSETS_DIR   = os.path.join(APP_DIR, "assets")
 SELFIES_DIR  = os.path.join(APP_DIR, "selfies")
 
-WORK_SECS  = 25 * 60
-BREAK_SECS =  5 * 60
+WORK_SECS   = 25 * 60
+BREAK_SECS  =  5 * 60
+STREAK_FILE = os.path.join(APP_DIR, "streak.json")
 
 # Silence OpenSSL/Tk noise in subprocesses
 _POPUP_ENV = {**os.environ, "TK_SILENCE_DEPRECATION": "1"}
@@ -64,6 +66,8 @@ class LockInPoliceApp(rumps.App):
         # Camera permission handshake (main-thread request → _tick activates detector)
         self._pending_start = False
         self._cam_granted: bool | None = None
+
+        self.streak, self.best_streak = self._load_streak()
 
         self.detector = PhoneDetector(self._dq, ASSETS_DIR, SELFIES_DIR)
         self.detector.start()
@@ -309,6 +313,23 @@ class LockInPoliceApp(rumps.App):
         self._refresh_menu()
         self._show_summary(duration, pickups, pomos, selfies)
 
+    # ── Streak persistence ────────────────────────────────────────────────────
+
+    def _load_streak(self) -> tuple[int, int]:
+        try:
+            with open(STREAK_FILE) as f:
+                data = json.load(f)
+            return data.get("streak", 0), data.get("best", 0)
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return 0, 0
+
+    def _save_streak(self, streak: int, best: int):
+        try:
+            with open(STREAK_FILE, "w") as f:
+                json.dump({"streak": streak, "best": best}, f)
+        except OSError:
+            pass
+
     # ── Summary ───────────────────────────────────────────────────────────────
 
     def _show_summary(self, duration: int, pickups: int, pomos: int, selfies: list[str]):
@@ -317,18 +338,29 @@ class LockInPoliceApp(rumps.App):
         dur_str = f"{hrs}h {mins}m" if hrs else f"{mins}m {secs}s"
 
         if pickups == 0:
+            self.streak += 1
             rating = "BEAST MODE. Completely clean session."
-        elif pickups <= 2:
-            rating = "Solid. Just slipped up a couple times."
-        elif pickups <= 5:
-            rating = f"Decent. But you checked your phone {pickups} times."
         else:
-            rating = f"Rough one. Your phone won {pickups} times today."
+            self.streak = 0
+            if pickups <= 2:
+                rating = "Solid. Just slipped up a couple times."
+            elif pickups <= 5:
+                rating = f"Decent. But you checked your phone {pickups} times."
+            else:
+                rating = f"Rough one. Your phone won {pickups} times today."
+
+        self.best_streak = max(self.streak, self.best_streak)
+        self._save_streak(self.streak, self.best_streak)
+
+        streak_line = f"🔥 Clean streak: {self.streak}"
+        if self.best_streak > 1:
+            streak_line += f"  (best: {self.best_streak})"
 
         msg = (
             f"Duration: {dur_str}\n"
             f"Pomodoros completed: {pomos}\n"
-            f"Phone pickups: {pickups}\n\n"
+            f"Phone pickups: {pickups}\n"
+            f"{streak_line}\n\n"
             f"{rating}"
         )
         if selfies:
