@@ -56,6 +56,7 @@ class LockInPoliceApp(rumps.App):
         self.pickups      = 0
         self.selfie_paths: list[str] = []
         self._fire_count  = 0
+        self._test_fire_count = 0
 
         # Threads / queues
         self._dq         = queue.Queue()
@@ -120,15 +121,16 @@ class LockInPoliceApp(rumps.App):
             self._hotkey_ev.clear()
             self._handle_hotkey()
 
-        # Drain detection events
-        try:
-            event = self._dq.get_nowait()
-            if self.phase == Phase.WORK:
-                self.pickups += 1
-                self.selfie_paths.append(event["selfie"])
-                self._on_phone_detected()
-        except queue.Empty:
-            pass
+        # Drain all pending detection events (not just one per tick)
+        while True:
+            try:
+                event = self._dq.get_nowait()
+                if self.phase == Phase.WORK:
+                    self.pickups += 1
+                    self.selfie_paths.append(event["selfie"])
+                    self._on_phone_detected()
+            except queue.Empty:
+                break
 
         # Pomodoro countdown
         if self.phase in (Phase.WORK, Phase.BREAK):
@@ -137,9 +139,9 @@ class LockInPoliceApp(rumps.App):
             if self.pomo_remaining <= 0:
                 self._pomodoro_transition()
 
-        # Report detector errors once
+        # Report detector errors non-blocking (alert would freeze the timer)
         if self.detector.error:
-            rumps.alert("Lock-In Police — Detector Error", self.detector.error)
+            rumps.notification("Lock-In Police", "Detector Error", self.detector.error)
             self.detector.error = None
 
     # ── Helpers ──────────────────────────────────────────────────────────────
@@ -379,8 +381,8 @@ class LockInPoliceApp(rumps.App):
     # ── Misc ──────────────────────────────────────────────────────────────────
 
     def _test_popup(self, _=None):
-        self._fire_count += 1
-        if self._fire_count % 2 == 1:
+        self._test_fire_count += 1
+        if self._test_fire_count % 2 == 1:
             img_path = pexels_client.fetch_image()
             if img_path:
                 subprocess.Popen(
@@ -388,7 +390,7 @@ class LockInPoliceApp(rumps.App):
                     env=_POPUP_ENV,
                 )
                 return
-        idx = (self._fire_count // 2) % len(QUOTES)
+        idx = (self._test_fire_count // 2) % len(QUOTES)
         headline, subtext = QUOTES[idx]
         sticker = sticker_client.fetch_sticker()
         cmd = [sys.executable, POPUP_SCRIPT, "--mode", "quote",

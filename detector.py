@@ -66,12 +66,14 @@ class PhoneDetector(threading.Thread):
                 time.sleep(0.2)
                 continue
 
-            # Open camera on demand when activated
+            # Open camera on demand; retry rather than killing the thread permanently
             if cap is None:
                 cap = cv2.VideoCapture(0)
                 if not cap.isOpened():
-                    self.error = "Could not open webcam."
-                    return
+                    cap = None
+                    self.error = "Could not open webcam — will retry."
+                    time.sleep(2)
+                    continue
 
             ret, frame = cap.read()
             if not ret:
@@ -86,7 +88,7 @@ class PhoneDetector(threading.Thread):
             for i in range(detections.shape[2]):
                 conf = float(detections[0, 0, i, 2])
                 if conf < CONFIDENCE_THRESHOLD:
-                    break  # detections sorted by confidence descending
+                    continue
                 cls = int(detections[0, 0, i, 1])
                 if cls == PHONE_CLASS_ID:
                     phone_found = True
