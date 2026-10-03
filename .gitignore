@@ -1,0 +1,12 @@
+.env
+selfies/
+logs/
+graphify-out/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+agents/output/
+*.bak
+.DS_Store
+assets/*.pb
